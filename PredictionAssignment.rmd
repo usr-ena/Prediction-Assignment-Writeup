@@ -1,0 +1,143 @@
+---
+title: "Prediction Assignment Writeup"
+author: "ENA"
+date: "November 18, 2017"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Overview
+
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement - a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, your goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. More information is available from the website here: http://groupware.les.inf.puc-rio.br/har (see the section on the Weight Lifting Exercise Dataset).
+
+The data for this project come from this source: http://groupware.les.inf.puc-rio.br/har. 
+
+The goal of your project is to predict the manner in which they did the exercise. This is the "classe" variable in the training set. You may use any of the other variables to predict with. You should create a report describing how you built your model, how you used cross validation, what you think the expected out of sample error is, and why you made the choices you did. You will also use your prediction model to predict 20 different test cases.
+
+
+
+```{r libs, echo=FALSE, message = FALSE, warning=FALSE}
+library(caret)
+library(rpart)
+library(rpart.plot)
+library(randomForest)
+library(corrplot)
+```
+
+## Data Pre-Processing
+
+Read the training and testingdata from the CSV files. Remove the columns with  with 'NA' values.  Remove the columns that represent the row number, timestamps and num_window.  Bisides classe we want the rest of the data to be numeric. Apply the transformations bth for training and testing sets.
+```{r dataread, echo=TRUE}
+training <- read.csv('C:\\DataScience\\pml-training.csv')
+testing <- read.csv('C:\\DataScience\\pml-testing.csv')
+
+#keep classe column for futur use; it's values are A B C D E, non-numeric
+classe <- training$classe
+#get only the columns without missing values
+training <- training[, colSums(is.na(training)) == 0] 
+#remove non-numeric columns
+training <- training[, sapply(training, is.numeric)]
+#remove unnecessary columns like row number, time stamps and num_window
+training <- training[, !grepl("^X|timestamp|window", names(training))]
+#add classe back to the data set (the rest of the data is numeric)
+training$classe <- classe
+
+#remove unnecessary columns from the testing set
+testing <- testing[, colSums(is.na(testing)) == 0]
+testing  <- testing[, sapply(testing, is.numeric)]
+testing <- testing[, !grepl("^X|timestamp|window", names(testing))]
+
+```
+
+After the clean up the trainng data set hs 19622 records with 53 variables one of which is classe.
+
+
+## Data Splitting
+
+Set the seed and split the training data set with p=3/4 using classe variable.
+```{r split, echo=TRUE}
+#set the seed
+set.seed(12345)
+#split the data
+trainIdx <- createDataPartition(y = training$classe, list = FALSE, p=3/4)
+trainData <- training[trainIdx,]
+testData <- training[-trainIdx,]
+
+```
+
+## Model Training and Tuning
+
+Caret package train function was used to evaluate the resampling and the effect of model tuning parameters on performance; choose the "optimal" model across these parameters; estimate model performance from a training set.
+
+For this project we decided to use random forest because it uses a random sample of the data training each tree independently. This randomnes helps to make the model more robust than a single decision tree and less likely to overfit on the training data. 
+
+The function trainControl was used to specifiy the type of resampling, cv, with 4-fold cross-validations that are used as the resampling scheme for bootstrapping.
+
+```{r train, echo=TRUE}
+#generating parametes that later are going to be used; resampling parameter cv.
+fitControl <- trainControl(method="cv", 
+                           4)
+
+#random forest model
+rfFit <- train(classe ~ ., 
+                 data=trainData, 
+                 method="rf", 
+                 trControl=fitControl, 
+                 ntree=200)
+#see the outcome
+rfFit
+
+```
+
+##Model Evaluation
+
+Pedict the outcomes on the test dataset uing Caret package function predict.  Evaluate the acuracy of the model we built.
+
+```{r evaluate, echo=TRUE}
+#apply the model to the test data set
+modelprediction <- predict(rfFit, testData)
+#see the confusion matrix
+confusionMatrix(testData$classe, modelprediction)
+#check out the model acuracy
+modelaccuracy <- postResample(modelprediction, testData$classe)
+#review the acuracy
+modelaccuracy
+
+```
+
+Our model has 99% accuracy.  It predicts sensitivity and specificity for each classe with over 98% accuracy.
+
+## Apply the prediction on the provided test dataset with the 20 test cases
+
+
+```{r predict, echo=FALSE}
+result <- predict(rfFit, testing[, -length(names(testing))])
+result
+
+```
+
+With 99% accuracy we predict that that manner in which the test subjects did the exercise was B A B A A E D B A A B C B A E E A B B B, where A is standing up, B - walking, C- standing, D - sitting down, and E - sitting.
+
+The out of sample error is less than 0.73%.
+
+
+# Appendix
+
+Explore relationships between the parameters and the resampling results for the model
+
+Decision Tree Visualization
+```{r , echo=TRUE}
+treeModel <- rpart(classe ~ ., data=trainData, method="class")
+prp(treeModel)
+
+```
+
+Correlation Matrix Visualization
+```{r , echo=TRUE}
+corrPlot <- cor(trainData[, -length(names(trainData))])
+corrplot(corrPlot, method="circle")
+
+```
